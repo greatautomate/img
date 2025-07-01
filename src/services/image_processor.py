@@ -5,9 +5,8 @@ Image processing service for handling image operations
 import io
 import os
 import tempfile
-from typing import Optional, Tuple, Dict, Any
+from typing import Optional, Tuple, Dict, Any, Union
 from PIL import Image, ImageFile
-import magic
 from loguru import logger
 
 from ..config import settings, SUPPORTED_IMAGE_FORMATS, MAX_IMAGE_PIXELS
@@ -26,36 +25,35 @@ class ImageProcessor:
     """Service for image processing operations"""
     
     @staticmethod
-    def validate_image(image_bytes: bytes) -> Dict[str, Any]:
+    def validate_image(image_data: Union[bytes, bytearray]) -> Dict[str, Any]:
         """
         Validate image format, size, and properties
         
         Args:
-            image_bytes: Raw image bytes
+            image_data: Raw image bytes or bytearray
             
         Returns:
             Dictionary with validation results and image info
         """
         try:
+            # Convert bytearray to bytes if needed
+            if isinstance(image_data, bytearray):
+                image_data = bytes(image_data)
+            
             # Check file size
-            size_mb = len(image_bytes) / (1024 * 1024)
+            size_mb = len(image_data) / (1024 * 1024)
             if size_mb > settings.max_image_size_mb:
                 raise ImageProcessingError(
                     f"Image too large: {size_mb:.1f}MB (max: {settings.max_image_size_mb}MB)"
                 )
             
-            # Detect MIME type
-            mime_type = magic.from_buffer(image_bytes, mime=True)
-            if not mime_type.startswith('image/'):
-                raise ImageProcessingError(f"Invalid file type: {mime_type}")
-            
             # Open and validate image with PIL
             try:
-                image = Image.open(io.BytesIO(image_bytes))
+                image = Image.open(io.BytesIO(image_data))
                 image.verify()  # Verify image integrity
                 
                 # Re-open for getting info (verify() closes the image)
-                image = Image.open(io.BytesIO(image_bytes))
+                image = Image.open(io.BytesIO(image_data))
                 
                 # Check image format
                 if image.format not in SUPPORTED_IMAGE_FORMATS:
@@ -73,6 +71,14 @@ class ImageProcessor:
                         f"Image too large: {pixel_count:,} pixels "
                         f"(max: {MAX_IMAGE_PIXELS:,} pixels)"
                     )
+                
+                # Determine MIME type from PIL format
+                mime_type_map = {
+                    "JPEG": "image/jpeg",
+                    "PNG": "image/png", 
+                    "WEBP": "image/webp"
+                }
+                mime_type = mime_type_map.get(image.format, "application/octet-stream")
                 
                 return {
                     "valid": True,
@@ -94,14 +100,14 @@ class ImageProcessor:
             raise ImageProcessingError(f"Image validation failed: {e}")
     
     @staticmethod
-    def optimize_image(image_bytes: bytes, 
+    def optimize_image(image_data: Union[bytes, bytearray], 
                       max_size_mb: Optional[float] = None,
                       target_format: str = "JPEG") -> bytes:
         """
         Optimize image for processing
         
         Args:
-            image_bytes: Raw image bytes
+            image_data: Raw image bytes or bytearray
             max_size_mb: Maximum file size in MB
             target_format: Target image format
             
@@ -109,7 +115,11 @@ class ImageProcessor:
             Optimized image bytes
         """
         try:
-            image = Image.open(io.BytesIO(image_bytes))
+            # Convert bytearray to bytes if needed
+            if isinstance(image_data, bytearray):
+                image_data = bytes(image_data)
+            
+            image = Image.open(io.BytesIO(image_data))
             
             # Convert to RGB if necessary (for JPEG)
             if target_format.upper() == "JPEG" and image.mode in ("RGBA", "P", "LA"):
@@ -195,18 +205,22 @@ class ImageProcessor:
         raise ImageProcessingError("Unable to optimize image to required size")
     
     @staticmethod
-    def get_image_info(image_bytes: bytes) -> Dict[str, Any]:
+    def get_image_info(image_data: Union[bytes, bytearray]) -> Dict[str, Any]:
         """
         Get detailed image information
         
         Args:
-            image_bytes: Raw image bytes
+            image_data: Raw image bytes or bytearray
             
         Returns:
             Dictionary with image information
         """
         try:
-            image = Image.open(io.BytesIO(image_bytes))
+            # Convert bytearray to bytes if needed
+            if isinstance(image_data, bytearray):
+                image_data = bytes(image_data)
+            
+            image = Image.open(io.BytesIO(image_data))
             
             return {
                 "format": image.format,
@@ -215,8 +229,8 @@ class ImageProcessor:
                 "width": image.size[0],
                 "height": image.size[1],
                 "pixel_count": image.size[0] * image.size[1],
-                "file_size_bytes": len(image_bytes),
-                "file_size_mb": len(image_bytes) / (1024 * 1024),
+                "file_size_bytes": len(image_data),
+                "file_size_mb": len(image_data) / (1024 * 1024),
                 "has_transparency": image.mode in ("RGBA", "LA") or "transparency" in image.info,
                 "color_mode": image.mode,
                 "aspect_ratio": image.size[0] / image.size[1]
@@ -227,20 +241,24 @@ class ImageProcessor:
             raise ImageProcessingError(f"Failed to get image info: {e}")
     
     @staticmethod
-    def save_temp_image(image_bytes: bytes, suffix: str = ".jpg") -> str:
+    def save_temp_image(image_data: Union[bytes, bytearray], suffix: str = ".jpg") -> str:
         """
         Save image to temporary file
         
         Args:
-            image_bytes: Raw image bytes
+            image_data: Raw image bytes or bytearray
             suffix: File extension
             
         Returns:
             Path to temporary file
         """
         try:
+            # Convert bytearray to bytes if needed
+            if isinstance(image_data, bytearray):
+                image_data = bytes(image_data)
+            
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
-                temp_file.write(image_bytes)
+                temp_file.write(image_data)
                 temp_path = temp_file.name
             
             logger.debug(f"Saved temporary image: {temp_path}")
@@ -266,19 +284,23 @@ class ImageProcessor:
             logger.warning(f"Failed to cleanup temporary file {file_path}: {e}")
     
     @staticmethod
-    def convert_format(image_bytes: bytes, target_format: str) -> bytes:
+    def convert_format(image_data: Union[bytes, bytearray], target_format: str) -> bytes:
         """
         Convert image to different format
         
         Args:
-            image_bytes: Raw image bytes
+            image_data: Raw image bytes or bytearray
             target_format: Target format (JPEG, PNG, WEBP)
             
         Returns:
             Converted image bytes
         """
         try:
-            image = Image.open(io.BytesIO(image_bytes))
+            # Convert bytearray to bytes if needed
+            if isinstance(image_data, bytearray):
+                image_data = bytes(image_data)
+            
+            image = Image.open(io.BytesIO(image_data))
             
             # Handle transparency for JPEG
             if target_format.upper() == "JPEG" and image.mode in ("RGBA", "P", "LA"):
