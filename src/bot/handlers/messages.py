@@ -26,9 +26,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Get the largest photo
         photo = update.message.photo[-1]
         
-        # Download photo
+        # Download photo - FIXED METHOD
         photo_file = await photo.get_file()
-        photo_bytes = await photo_file.download_as_bytes()
+        photo_bytes = await photo_file.download_as_bytearray()  # Fixed: use download_as_bytearray()
         
         # Validate image
         try:
@@ -194,6 +194,10 @@ async def process_image_edit(image_edit: ImageEdit,
     """Process the image edit request"""
     
     try:
+        # Convert bytearray to bytes if needed
+        if isinstance(image_bytes, bytearray):
+            image_bytes = bytes(image_bytes)
+        
         # Encode image to base64
         input_image_base64 = BFLAPIService.encode_image_to_base64(image_bytes)
         
@@ -295,9 +299,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
         
-        # Download and process as photo
+        # Download and process as photo - FIXED METHOD
         document_file = await document.get_file()
-        image_bytes = await document_file.download_as_bytes()
+        image_bytes = await document_file.download_as_bytearray()  # Fixed: use download_as_bytearray()
         
         # Validate image
         try:
