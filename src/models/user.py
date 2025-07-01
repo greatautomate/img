@@ -4,30 +4,25 @@ User model for MongoDB storage
 
 from datetime import datetime
 from typing import Optional, Dict, Any, Annotated
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict, field_validator, BeforeValidator
 from bson import ObjectId
 
 
-class PyObjectId(ObjectId):
-    """Custom ObjectId type for Pydantic v2"""
-    
-    @classmethod
-    def __get_pydantic_json_schema__(cls, core_schema, handler):
-        """Updated schema method for Pydantic v2"""
-        return {"type": "string", "format": "objectid"}
-    
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.validate
+def validate_object_id(v):
+    """Validator function for ObjectId - Pydantic v2 compatible"""
+    if v is None:
+        return ObjectId()
+    if isinstance(v, ObjectId):
+        return v
+    if isinstance(v, str):
+        if ObjectId.is_valid(v):
+            return ObjectId(v)
+        raise ValueError("Invalid ObjectId string")
+    raise ValueError(f"Invalid ObjectId type: {type(v)}")
 
-    @classmethod
-    def validate(cls, v):
-        if isinstance(v, ObjectId):
-            return v
-        if isinstance(v, str):
-            if ObjectId.is_valid(v):
-                return ObjectId(v)
-        raise ValueError("Invalid ObjectId")
+
+# Use Annotated with BeforeValidator for Pydantic v2
+PyObjectId = Annotated[ObjectId, BeforeValidator(validate_object_id)]
 
 
 class UserStats(BaseModel):
@@ -68,7 +63,7 @@ class User(BaseModel):
         }
     )
     
-    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    id: Optional[PyObjectId] = Field(default=None, alias="_id")
     telegram_user_id: int = Field(..., description="Unique Telegram user ID")
     username: Optional[str] = None
     first_name: Optional[str] = None
@@ -160,11 +155,27 @@ class User(BaseModel):
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for MongoDB insertion"""
         data = self.model_dump(by_alias=True)
-        if '_id' in data and data['_id'] is None:
-            del data['_id']
+        # Ensure ObjectId is properly handled
+        if '_id' not in data or data['_id'] is None:
+            data['_id'] = ObjectId()
+        elif isinstance(data['_id'], str):
+            data['_id'] = ObjectId(data['_id'])
         return data
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'User':
         """Create User instance from dictionary"""
         return cls(**data)
+    
+    def model_dump_for_mongo(self) -> Dict[str, Any]:
+        """Dump model data specifically formatted for MongoDB"""
+        data = self.model_dump(by_alias=True, exclude_unset=True)
+        
+        # Handle ObjectId conversion
+        if '_id' in data and data['_id'] is not None:
+            if isinstance(data['_id'], str):
+                data['_id'] = ObjectId(data['_id'])
+        elif '_id' not in data:
+            data['_id'] = ObjectId()
+            
+        return data
