@@ -1,0 +1,61 @@
+# Render.com deployment configuration for MedusaXD AI Image Editor Bot
+
+services:
+  # Main bot service (Background Worker)
+  - type: worker
+    name: medusaxd-ai-bot
+    env: python
+    plan: starter  # Can be upgraded to standard/pro as needed
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false  # Set manually in Render dashboard
+      - key: BFL_API_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: MONGODB_URL
+        sync: false  # Set manually in Render dashboard
+      - key: BOT_USERNAME
+        value: MedusaXDAIBot
+      - key: DATABASE_NAME
+        value: medusaxd_bot
+      - key: ENVIRONMENT
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: MAX_IMAGE_SIZE_MB
+        value: 20
+      - key: POLLING_INTERVAL_SECONDS
+        value: 2
+      - key: MAX_POLLING_ATTEMPTS
+        value: 150
+      - key: ADMIN_USER_IDS
+        sync: false  # Set manually in Render dashboard
+    autoDeploy: true
+    branch: main
+    healthCheckPath: /health  # Optional health check endpoint
+    
+  # Optional: Web service for health checks and webhooks
+  - type: web
+    name: medusaxd-web-service
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m src.web.app  # Optional web interface
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: BFL_API_KEY
+        sync: false
+      - key: MONGODB_URL
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        value: 10000
+    autoDeploy: true
+    branch: main
+    healthCheckPath: /health
+
+# Note: Using external MongoDB Atlas database
+# Set MONGODB_URL environment variable to your MongoDB Atlas connection string

@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  medusaxd-bot:
+    build: .
+    container_name: medusaxd-ai-bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - BFL_API_KEY=${BFL_API_KEY}
+      - MONGODB_URL=${MONGODB_URL}
+      - BOT_USERNAME=${BOT_USERNAME:-MedusaXDAIBot}
+      - DATABASE_NAME=${DATABASE_NAME:-medusaxd_bot}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - MAX_IMAGE_SIZE_MB=${MAX_IMAGE_SIZE_MB:-20}
+      - POLLING_INTERVAL_SECONDS=${POLLING_INTERVAL_SECONDS:-2}
+      - MAX_POLLING_ATTEMPTS=${MAX_POLLING_ATTEMPTS:-150}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    networks:
+      - medusaxd-network
+    # depends_on removed - using external MongoDB Atlas
+    healthcheck:
+      test: ["CMD", "python", "-c", "import asyncio; from src.services.bfl_api import BFLAPIService; print('Health check passed')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # MongoDB service removed - using external MongoDB Atlas
+  # Set MONGODB_URL environment variable to your MongoDB Atlas connection string
+
+  # Optional: Redis for caching (if needed in future)
+  redis:
+    image: redis:7.2-alpine
+    container_name: medusaxd-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - medusaxd-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Monitoring with Prometheus (for production)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: medusaxd-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - medusaxd-network
+    profiles:
+      - monitoring
+
+  # Optional: Grafana for dashboards (for production)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: medusaxd-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - medusaxd-network
+    profiles:
+      - monitoring
+
+networks:
+  medusaxd-network:
+    driver: bridge
+
+volumes:
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
